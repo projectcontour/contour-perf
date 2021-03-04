@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata: 
+  generateName: wrk2-
+  namespace: default
+spec: 
+  containers: 
+    - args: 
+        - tail
+        - "-f"
+        - /dev/null
+      image: "alexbrand/wrk2:xenial"
+      name: wrk2-one
+  initContainers: 
+    - command: 
+        - sh
+        - "-c"
+        - "sysctl -w net.ipv4.ip_local_port_range=\"1024 65535\""
+      image: "alpine:3.6"
+      imagePullPolicy: IfNotPresent
+      name: sysctl-set
+      securityContext: 
+          privileged: true
+  nodeSelector: 
+      workload: wrk

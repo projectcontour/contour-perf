@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    workload: wrk2
+  generateName: wrk2-
+spec:
+  backoffLimit: 6
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      labels:
+        workload: wrk2
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: workload
+                  operator: In
+                  values:
+                  - wrk2
+              topologyKey: kubernetes.io/hostname
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - sysctl -w net.ipv4.ip_local_port_range="1024 65535"
+        image: alpine:3.6
+        imagePullPolicy: IfNotPresent
+        name: sysctl-set
+        securityContext:
+          privileged: true
+      containers:
+      - command: 
+        - wrk
+        - --threads
+        - "4"
+        - --latency
+        - --duration
+        - "300"
+        - --connections
+        - "600"
+        - --rate
+        - "30000"
+        - --header
+        - "Host: example.com"
+        - http://envoy.contour.svc.cluster.local
+        image: bootjp/wrk2
+        imagePullPolicy: Always
+        name: wrk2
+      nodeSelector:
+        workload: wrk
+      restartPolicy: OnFailure

@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    workload: tcpkali
+  generateName: tcpkali-
+spec:
+  completions: 6
+  parallelism: 6
+  template:
+    metadata:
+      labels:
+        workload: tcpkali
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: workload
+                  operator: In
+                  values:
+                  - tcpkali
+              topologyKey: kubernetes.io/hostname
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - sysctl -w net.core.somaxconn=65535; sysctl -w net.ipv4.ip_local_port_range="1024 65535"
+        image: alpine:3.6
+        imagePullPolicy: IfNotPresent
+        name: sysctl-set
+        securityContext:
+          privileged: true
+      containers:
+      - args:
+        - tcpkali
+        - --connections
+        - "50000"
+        - --duration
+        - "420"
+        - --connect-rate
+        - "2000"
+        - envoy.gimbal-contour.svc.cluster.local:80
+        image: jojiisacth/tcpkali
+        imagePullPolicy: Always
+        name: tcpkali
+      restartPolicy: Never

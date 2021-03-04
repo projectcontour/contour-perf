@@ -1,0 +1,133 @@
+apiVersion: v1
+data:
+  nginx.conf: |2
+    user  root;
+    worker_processes  auto;
+    worker_rlimit_nofile 262144;
+
+    error_log  /var/log/nginx/error.log warn;
+    pid        /var/run/nginx.pid;
+
+
+    events {
+        use epoll;
+        worker_connections  65536;
+        multi_accept on;
+    }
+
+
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+
+        log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                          '$status $body_bytes_sent "$http_referer" '
+                          '"$http_user_agent" "$http_x_forwarded_for"';
+
+        # access_log  /var/log/nginx/access.log  main;
+        access_log off;
+
+        sendfile       on;
+        tcp_nopush     on;
+
+        keepalive_timeout  65s;
+        keepalive_requests 10000;
+        open_file_cache max=100;
+
+        #gzip  on;
+
+        include /etc/nginx/conf.d/*.conf;
+    }
+  default.conf: |2
+    server {
+      listen       80 reuseport backlog=65536;
+      server_name  localhost;
+
+      location / {
+          root   /usr/share/nginx/html;
+          index  index.html index.htm;
+      }
+
+      # redirect server error pages to the static page /50x.html
+      error_page   500 502 503 504  /50x.html;
+      location = /50x.html {
+          root   /usr/share/nginx/html;
+      }
+    }
+kind: ConfigMap
+metadata:
+  name: nginx-config
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: nginx
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - sysctl -w net.core.somaxconn="65536"; sysctl -w net.ipv4.ip_local_port_range="1024 65535";
+        image: alpine:3.6
+        imagePullPolicy: IfNotPresent
+        name: sysctl-set
+        securityContext:
+          privileged: true
+      containers:
+      - image: nginx
+        imagePullPolicy: Always
+        name: nginx
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: run
+                  operator: In
+                  values:
+                  - nginx
+              topologyKey: kubernetes.io/hostname
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      nodeSelector:
+        workload: nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    contour.heptio.com/max-connections: "50000"
+    contour.heptio.com/max-requests: "50000"
+  name: nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: nginx
+  type: ClusterIP
